@@ -1,5 +1,5 @@
 """
-Apex-CED-1.58 -- reference implementation (research prototype).
+SKED (Shared-KV Encoder-Decoder) -- reference implementation (research prototype).
 
 Implements the architecture described in README.md:
 
@@ -21,6 +21,9 @@ from typing import List, Optional, Tuple
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
+# Sentinel window meaning "no truncation": the mask degenerates to pure causal.
+DENSE_WINDOW = 10 ** 9
 
 
 # ---------------------------------------------------------------------------
@@ -72,6 +75,20 @@ class BitLinear158(nn.Module):
 
         out = F.linear(x_ste, w_ste, self.bias)
         return out * (beta * gamma / 127.0)
+
+
+def make_linear(ternary: bool, in_features: int, out_features: int) -> nn.Module:
+    """Weight factory: ternary BitLinear158, or a plain fp32 Linear.
+
+    Exists so that architecture ablations can be run without the quantizer in
+    the loop. At the scales used by the toy experiments (dim <= 128) ternary
+    weights dominate the outcome -- a 2-layer model at dim 64 cannot form the
+    key-matching circuit that associative recall needs. Mixing the two axes
+    makes an architecture ablation uninterpretable.
+    """
+    if ternary:
+        return BitLinear158(in_features, out_features)
+    return nn.Linear(in_features, out_features)
 
 
 class RMSNorm(nn.Module):
@@ -137,14 +154,15 @@ class CausalCEDCrossAttention(nn.Module):
     correct once the cache is populated (q_len == 1 during decode).
     """
 
-    def __init__(self, dim: int, num_heads: int, head_dim: int, cap_val: float = 50.0):
+    def __init__(self, dim: int, num_heads: int, head_dim: int, cap_val: float = 50.0,
+                 ternary: bool = True):
         super().__init__()
         self.num_heads = num_heads
         self.head_dim = head_dim
         self.cap_val = cap_val
         self.scale = 1.0 / math.sqrt(head_dim)
-        self.q_proj = BitLinear158(dim, num_heads * head_dim)
-        self.o_proj = BitLinear158(num_heads * head_dim, dim)
+        self.q_proj = make_linear(ternary, dim, num_heads * head_dim)
+        self.o_proj = make_linear(ternary, num_heads * head_dim, dim)
 
     def forward(self, x: torch.Tensor, global_k: torch.Tensor, global_v: torch.Tensor) -> torch.Tensor:
         b, lq, _ = x.shape
@@ -167,11 +185,11 @@ class CausalCEDCrossAttention(nn.Module):
 # Feed-forward stacks
 # ---------------------------------------------------------------------------
 class DenseSwiGLU(nn.Module):
-    def __init__(self, dim: int, hidden: int):
+    def __init__(self, dim: int, hidden: int, ternary: bool = True):
         super().__init__()
-        self.gate = BitLinear158(dim, hidden)
-        self.up = BitLinear158(dim, hidden)
-        self.down = BitLinear158(hidden, dim)
+        self.gate = make_linear(ternary, dim, hidden)
+        self.up = make_linear(ternary, dim, hidden)
+        self.down = make_linear(ternary, hidden, dim)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.down(F.silu(self.gate(x)) * self.up(x))
@@ -185,7 +203,7 @@ class TernaryMoE(nn.Module):
     """
 
     def __init__(self, dim: int, hidden: int, num_experts: int = 32, top_k: int = 4,
-                 bias_lr: float = 1e-3):
+                 bias_lr: float = 1e-3, ternary: bool = True):
         super().__init__()
         assert 0 < top_k <= num_experts
         self.num_experts = num_experts
@@ -193,9 +211,9 @@ class TernaryMoE(nn.Module):
         self.bias_lr = bias_lr
         self.gate = nn.Linear(dim, num_experts, bias=False)
         self.register_buffer("expert_bias", torch.zeros(num_experts))
-        self.up = nn.ModuleList([BitLinear158(dim, hidden) for _ in range(num_experts)])
-        self.gate_proj = nn.ModuleList([BitLinear158(dim, hidden) for _ in range(num_experts)])
-        self.down = nn.ModuleList([BitLinear158(hidden, dim) for _ in range(num_experts)])
+        self.up = nn.ModuleList([make_linear(ternary, dim, hidden) for _ in range(num_experts)])
+        self.gate_proj = nn.ModuleList([make_linear(ternary, dim, hidden) for _ in range(num_experts)])
+        self.down = nn.ModuleList([make_linear(ternary, hidden, dim) for _ in range(num_experts)])
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         b, l, d = x.shape
@@ -238,28 +256,32 @@ class KVCache:
     v: Optional[torch.Tensor] = None
 
 
-class ApexCEDBlock(nn.Module):
+class SKEDBlock(nn.Module):
     def __init__(self, dim: int, num_heads: int, is_decoder: bool, window_size: int,
-                 ffn_hidden: int, num_experts: int = 32, top_k: int = 4):
+                 ffn_hidden: int, num_experts: int = 32, top_k: int = 4,
+                 use_cross_attention: bool = True, ternary: bool = True):
         super().__init__()
         self.is_decoder = is_decoder
         self.window_size = window_size
+        self.use_cross_attention = use_cross_attention
         self.num_heads = num_heads
         self.head_dim = dim // num_heads
 
         self.norm1 = RMSNorm(dim)
-        self.q_proj = BitLinear158(dim, dim)
-        self.k_proj = BitLinear158(dim, dim)
-        self.v_proj = BitLinear158(dim, dim)
-        self.o_proj = BitLinear158(dim, dim)
+        self.q_proj = make_linear(ternary, dim, dim)
+        self.k_proj = make_linear(ternary, dim, dim)
+        self.v_proj = make_linear(ternary, dim, dim)
+        self.o_proj = make_linear(ternary, dim, dim)
 
         self.norm2 = RMSNorm(dim)
         if is_decoder:
-            self.norm_cross = RMSNorm(dim)
-            self.cross_attn = CausalCEDCrossAttention(dim, num_heads, self.head_dim)
-            self.ffn = TernaryMoE(dim, ffn_hidden, num_experts, top_k)
+            self.ffn = TernaryMoE(dim, ffn_hidden, num_experts, top_k, ternary=ternary)
+            if use_cross_attention:
+                self.norm_cross = RMSNorm(dim)
+                self.cross_attn = CausalCEDCrossAttention(dim, num_heads, self.head_dim,
+                                                          ternary=ternary)
         else:
-            self.ffn = DenseSwiGLU(dim, ffn_hidden)
+            self.ffn = DenseSwiGLU(dim, ffn_hidden, ternary=ternary)
 
     def forward(self, x: torch.Tensor, rope: RotaryEmbedding, position_ids: torch.Tensor,
                 cache: Optional[KVCache] = None,
@@ -283,7 +305,7 @@ class ApexCEDBlock(nn.Module):
         attn = sliding_window_attention(q, k, v, self.window_size)
         x = x + self.o_proj(attn.transpose(1, 2).reshape(b, l, d))
 
-        if self.is_decoder and global_kv is not None:
+        if self.is_decoder and self.use_cross_attention and global_kv is not None:
             x = x + self.cross_attn(self.norm_cross(x), global_kv[0], global_kv[1])
         x = x + self.ffn(self.norm2(x))
         return x
@@ -292,31 +314,57 @@ class ApexCEDBlock(nn.Module):
 # ---------------------------------------------------------------------------
 # Model
 # ---------------------------------------------------------------------------
-class ApexCEDModel(nn.Module):
+class SKEDModel(nn.Module):
     def __init__(self, vocab_size: int = 128256, dim: int = 2048, num_heads: int = 16,
                  enc_layers: int = 16, dec_layers: int = 16, enc_ffn: int = 5632,
                  moe_hidden: int = 2816, num_experts: int = 32, top_k: int = 4,
-                 window_size: int = 512, logit_cap: float = 30.0):
+                 window_size: int = 512, logit_cap: float = 30.0,
+                 use_cross_attention: bool = True, enc_dense_tail: int = 0,
+                 ternary: bool = True):
+        """enc_dense_tail: number of trailing encoder layers that use dense causal
+        attention instead of the sliding window. Ablation switch; the default 0
+        (fully windowed encoder) is the intended configuration.
+
+        It is tempting to argue the KV-producing stage needs a global receptive
+        field. It does not. A windowed encoder leaves ``global_k[j]`` summarising
+        only ``[j-W+1, j]``, but the decoder cross-attends over the whole
+        ``global_k`` set, and position p appears in ``global_k[p .. p+W-1]`` -- so
+        every position stays addressable and the union of the window summaries
+        covers the prefix. Measured in experiments/exp6_ablation.py: a fully
+        windowed encoder with cross-attention scores 1.000, identical to a
+        dense-tail and to a fully dense model, while dropping cross-attention
+        costs 0.6 accuracy. Keeping the encoder fully windowed avoids the O(L^2)
+        prefill term entirely.
+        """
         super().__init__()
         assert dim % num_heads == 0
+        assert 0 <= enc_dense_tail <= enc_layers
         self.dim = dim
         self.num_heads = num_heads
         self.head_dim = dim // num_heads
         self.logit_cap = logit_cap
         self.window_size = window_size
+        self.use_cross_attention = use_cross_attention
+        self.enc_dense_tail = enc_dense_tail
+        self.ternary = ternary
 
         self.embed = nn.Embedding(vocab_size, dim)
         self.rope = RotaryEmbedding(self.head_dim)
 
+        enc_windows = [window_size] * enc_layers
+        for i in range(enc_layers - enc_dense_tail, enc_layers):
+            enc_windows[i] = DENSE_WINDOW
         self.encoders = nn.ModuleList([
-            ApexCEDBlock(dim, num_heads, False, window_size, enc_ffn)
-            for _ in range(enc_layers)
+            SKEDBlock(dim, num_heads, False, enc_windows[i], enc_ffn, ternary=ternary)
+            for i in range(enc_layers)
         ])
-        self.global_k_proj = BitLinear158(dim, dim)
-        self.global_v_proj = BitLinear158(dim, dim)
+        if use_cross_attention:
+            self.global_k_proj = make_linear(ternary, dim, dim)
+            self.global_v_proj = make_linear(ternary, dim, dim)
 
         self.decoders = nn.ModuleList([
-            ApexCEDBlock(dim, num_heads, True, window_size, moe_hidden, num_experts, top_k)
+            SKEDBlock(dim, num_heads, True, window_size, moe_hidden, num_experts, top_k,
+                      use_cross_attention=use_cross_attention, ternary=ternary)
             for _ in range(dec_layers)
         ])
         self.final_norm = RMSNorm(dim)
@@ -335,13 +383,16 @@ class ApexCEDModel(nn.Module):
             h = blk(h, self.rope, position_ids,
                     cache=None if enc_caches is None else enc_caches[i])
 
-        nk = self.global_k_proj(h).view(b, l, self.num_heads, self.head_dim).transpose(1, 2)
-        nv = self.global_v_proj(h).view(b, l, self.num_heads, self.head_dim).transpose(1, 2)
-        if global_kv is None:
-            gk, gv = nk, nv
+        if self.use_cross_attention:
+            nk = self.global_k_proj(h).view(b, l, self.num_heads, self.head_dim).transpose(1, 2)
+            nv = self.global_v_proj(h).view(b, l, self.num_heads, self.head_dim).transpose(1, 2)
+            if global_kv is None:
+                gk, gv = nk, nv
+            else:
+                gk = torch.cat([global_kv[0], nk], dim=2)
+                gv = torch.cat([global_kv[1], nv], dim=2)
         else:
-            gk = torch.cat([global_kv[0], nk], dim=2)
-            gv = torch.cat([global_kv[1], nv], dim=2)
+            gk = gv = None
 
         d = h
         for i, blk in enumerate(self.decoders):

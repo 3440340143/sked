@@ -1,0 +1,97 @@
+{
+  "window": 256,
+  "dense": [
+    {
+      "seq_len": 256,
+      "prefill_ms": 131.20119999803137,
+      "global_kv_mib": 0.25,
+      "decoder_local_kv_mib": 0.5,
+      "encoder_local_kv_mib": 0.5,
+      "sked_total_kv_mib": 1.25,
+      "dense_baseline_kv_mib": 1.0
+    },
+    {
+      "seq_len": 512,
+      "prefill_ms": 181.98490000213496,
+      "global_kv_mib": 0.5,
+      "decoder_local_kv_mib": 1.0,
+      "encoder_local_kv_mib": 1.0,
+      "sked_total_kv_mib": 2.5,
+      "dense_baseline_kv_mib": 2.0
+    },
+    {
+      "seq_len": 1024,
+      "prefill_ms": 302.4879000004148,
+      "global_kv_mib": 1.0,
+      "decoder_local_kv_mib": 2.0,
+      "encoder_local_kv_mib": 2.0,
+      "sked_total_kv_mib": 5.0,
+      "dense_baseline_kv_mib": 4.0
+    },
+    {
+      "seq_len": 2048,
+      "prefill_ms": 672.9810999968322,
+      "global_kv_mib": 2.0,
+      "decoder_local_kv_mib": 4.0,
+      "encoder_local_kv_mib": 4.0,
+      "sked_total_kv_mib": 10.0,
+      "dense_baseline_kv_mib": 8.0
+    },
+    {
+      "seq_len": 4096,
+      "prefill_ms": 2042.5836000067648,
+      "global_kv_mib": 4.0,
+      "decoder_local_kv_mib": 8.0,
+      "encoder_local_kv_mib": 8.0,
+      "sked_total_kv_mib": 20.0,
+      "dense_baseline_kv_mib": 16.0
+    }
+  ],
+  "windowed": [
+    {
+      "seq_len": 256,
+      "prefill_ms": 123.69029999535996,
+      "global_kv_mib": 0.25,
+      "decoder_local_kv_mib": 0.5,
+      "encoder_local_kv_mib": 0.5,
+      "sked_total_kv_mib": 1.25,
+      "dense_baseline_kv_mib": 1.0
+    },
+    {
+      "seq_len": 512,
+      "prefill_ms": 189.49940000311472,
+      "global_kv_mib": 0.5,
+      "decoder_local_kv_mib": 0.5,
+      "encoder_local_kv_mib": 0.5,
+      "sked_total_kv_mib": 1.5,
+      "dense_baseline_kv_mib": 2.0
+    },
+    {
+      "seq_len": 1024,
+      "prefill_ms": 305.20020000403747,
+      "global_kv_mib": 1.0,
+      "decoder_local_kv_mib": 0.5,
+      "encoder_local_kv_mib": 0.5,
+      "sked_total_kv_mib": 2.0,
+      "dense_baseline_kv_mib": 4.0
+    },
+    {
+      "seq_len": 2048,
+      "prefill_ms": 482.66890000377316,
+      "global_kv_mib": 2.0,
+      "decoder_local_kv_mib": 0.5,
+      "encoder_local_kv_mib": 0.5,
+      "sked_total_kv_mib": 3.0,
+      "dense_baseline_kv_mib": 8.0
+    },
+    {
+      "seq_len": 4096,
+      "prefill_ms": 1914.2648999986704,
+      "global_kv_mib": 4.0,
+      "decoder_local_kv_mib": 0.5,
+      "encoder_local_kv_mib": 0.5,
+      "sked_total_kv_mib": 5.0,
+      "dense_baseline_kv_mib": 16.0
+    }
+  ]
+}

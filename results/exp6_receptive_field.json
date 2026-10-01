@@ -1,0 +1,23 @@
+{
+  "config": {
+    "seq_len": 14,
+    "window": 4
+  },
+  "rows": [
+    {
+      "enc_dense_tail": 0,
+      "delta_at_pos0": 1.8309128284454346,
+      "delta_at_last": 0.0
+    },
+    {
+      "enc_dense_tail": 1,
+      "delta_at_pos0": 1.8309128284454346,
+      "delta_at_last": 0.06948292255401611
+    },
+    {
+      "enc_dense_tail": 2,
+      "delta_at_pos0": 1.8309128284454346,
+      "delta_at_last": 0.11634166538715363
+    }
+  ]
+}

@@ -1,0 +1,78 @@
+{
+  "config": {
+    "n_pairs": 6,
+    "n_vals": 16,
+    "seq_len": 14,
+    "window": 4,
+    "steps": 2500,
+    "lr": 0.001,
+    "seeds": [
+      0
+    ],
+    "chance": 0.0625,
+    "model": {
+      "vocab_size": 64,
+      "dim": 64,
+      "num_heads": 4,
+      "enc_layers": 2,
+      "dec_layers": 2,
+      "enc_ffn": 128,
+      "moe_hidden": 128,
+      "num_experts": 4,
+      "top_k": 2,
+      "ternary": false
+    }
+  },
+  "runs": [
+    {
+      "variant": "dense_causal",
+      "seed": 0,
+      "params": 320768,
+      "ternary": false,
+      "final_acc": 1.0,
+      "sec": 223.2,
+      "curve": [
+        [
+          250,
+          0.1094
+        ],
+        [
+          500,
+          0.2676
+        ],
+        [
+          750,
+          0.2822
+        ],
+        [
+          1000,
+          1.0
+        ],
+        [
+          1250,
+          1.0
+        ],
+        [
+          1500,
+          1.0
+        ],
+        [
+          1750,
+          1.0
+        ],
+        [
+          2000,
+          1.0
+        ],
+        [
+          2250,
+          1.0
+        ],
+        [
+          2500,
+          1.0
+        ]
+      ]
+    }
+  ]
+}

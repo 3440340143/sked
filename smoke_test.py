@@ -1,5 +1,5 @@
 """
-Smoke tests for apex_ced_core.py.
+Smoke tests for sked_core.py.
 
 These check that the implementation is *internally consistent*: masks are
 causal, incremental decoding matches a full forward pass, quantization is
@@ -12,8 +12,8 @@ Run:  python smoke_test.py
 import torch
 import torch.nn.functional as F
 
-from apex_ced_core import (
-    ApexCEDModel,
+from sked_core import (
+    SKEDModel,
     BitLinear158,
     count_parameters,
     estimate_static_bytes,
@@ -39,7 +39,7 @@ def tiny_model(**overrides):
     cfg = dict(vocab_size=512, dim=128, num_heads=4, enc_layers=2, dec_layers=2,
                enc_ffn=256, moe_hidden=192, num_experts=8, top_k=2, window_size=8)
     cfg.update(overrides)
-    return ApexCEDModel(**cfg)
+    return SKEDModel(**cfg)
 
 
 # ---------------------------------------------------------------------------
@@ -179,7 +179,7 @@ def test_parameter_accounting_matches_spec():
     ~41 GB if materialised in fp32. Only shapes are needed for accounting.
     """
     with torch.device("meta"):
-        m = ApexCEDModel()  # defaults == spec config
+        m = SKEDModel()  # defaults == spec config
     total = count_parameters(m)
     print(f"        total params      : {total/1e9:.3f} B")
 
@@ -192,7 +192,7 @@ def test_parameter_accounting_matches_spec():
 
 
 if __name__ == "__main__":
-    print("apex-ced-1.58 smoke tests\n")
+    print("SKED smoke tests\n")
     check("bitlinear forward is exactly ternary", test_bitlinear_is_exactly_ternary)
     check("bitlinear gradients flow", test_bitlinear_gradients_flow)
     check("forward/backward shapes + loss", test_forward_and_backward_shapes)
